@@ -1,0 +1,211 @@
+version: '3.9'
+
+# `&anchor-name` defines the anchor (Here it is a map/dict)
+# `*anchor-name` references the anchor
+# `<<: *anchor-name` merges (`<<:`) the keys of `*anchor-name` with the current map
+
+x-default-settings: &default-settings
+#  restart: unless-stopped
+  deploy:
+    resources:
+      limits:
+        memory: 2G
+
+x-dronn-env: &dronn-env
+  SEED_IP: charon
+  SEED2_IP: gall
+  REDIS_PASSWORD: "${REDIS_PASSWORD}"
+  INFLUX_PASSWORD: "${INFLUX_PASSWORD}"
+  JAVA_OPTS: "${DEFAULT_JAVA_OPTS}"
+  JAVA_TOOL_OPTIONS: "${DEFAULT_JAVA_TOOL_OPTIONS}"
+
+services:
+#  postgresql-db:
+#    image: docker.io/library/postgres:12
+#    restart: unless-stopped
+#    ports:
+#      - "8089:5432"
+#    environment:
+#      POSTGRES_DB: "voice_gateway"
+#      POSTGRES_USER: "db_user"
+#      POSTGRES_PASSWORD: "${DB_PASS}"
+#      PGDATA: "/var/lib/postgresql/data/pgdatqa"
+#    volumes:
+#      - ./postgresq/createSchema.sql:/docker-entrypoint-initdb.d/init.sql
+#      - /opt/postgres:/var/lib/postgresql/data
+#    deploy:
+#      resources:
+#        limits:
+#          memory: 1G
+#        reservations:
+#          memory: 1G
+
+  redis:
+    image: "bitnami/redis:6.0.6"
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - /opt/redis-data:/bitnami/redis/data
+    environment:
+      - REDIS_PASSWORD
+      - REDIS_AOF_ENABLED=no
+
+  influx:
+    image: influxdb:1.7.11-alpine
+    volumes:
+      - ./influxdb/initdb.iql:/docker-entrypoint-initdb.d/initdb.iql:ro
+      - ./influxdb/config.toml:/etc/influxdb/influxdb.conf:ro
+      - /opt/influxdb-data:/var/lib/influxdb
+    ports:
+      - "8086:8086"
+    environment:
+      - INFLUXDB_HTTP_AUTH_ENABLED=true
+      - INFLUXDB_ADMIN_PASSWORD=admin
+      - INFLUXDB_ADMIN_USER=admin
+      - INFLUXDB_ADMIN_USER_PASSWORD=admin
+
+  swagger:
+    image: swaggerapi/swagger-ui:v3.48.0
+    restart: always
+    env_file:
+      - swagger/swagger.env
+    ports:
+      - "8782:8080"
+
+  graphiql:
+    image: npalm/graphiql
+    restart: always
+    environment:
+      - API_URL=http://dronn03.dev.dronn.com:8090/graphql
+    ports:
+      - "4000:4000"
+
+  gall:
+    image: ${GALL_IMAGE}
+    <<: *default-settings
+    environment:
+      <<: *dronn-env
+      NODE_IP: gall
+      DB_PASS: ${DB_PASS}
+    ports:
+      - "32157:32157"
+    volumes:
+      - ./gall:/home/app/conf
+      - ./root.conf:/home/app/root.conf
+      - /data/dronn3/recordings:/var/log/gall/
+      - /proc:/writable_proc
+      - ./logs:/var/log/dronn
+
+  qpido:
+    image: ${QPIDO_IMAGE}
+    <<: *default-settings
+    environment:
+      <<: *dronn-env
+      NODE_IP: qpido
+      DB_PASS: ${DB_PASS}
+    ports:
+      - "8124:8124"
+    volumes:
+      - ./qpido:/home/app/conf
+      - ./root.conf:/home/app/root.conf
+      - ./logs:/var/log/dronn
+    deploy:
+      resources:
+        limits:
+          memory: 1536m
+
+  charon:
+    image: ${CHARON_IMAGE}
+    <<: *default-settings
+    ports:
+      - "2552:2552"
+      - "8558:8558"
+      - "5060:5060/udp"
+      - "5051:5051/udp"
+      - "15000-15020:15000-15020/udp"
+      - "8000:8000"
+      - "8126:8126"
+    environment:
+      <<: *dronn-env
+      NODE_IP: charon
+      DB_PASS: ${DB_PASS}
+    volumes:
+      - ./charon:/home/app/conf
+      - ./root.conf:/home/app/root.conf
+      - ./logs:/var/log/dronn
+
+  philotes-rest:
+    image: ${PHILOTES_REST_IMAGE}
+    <<: *default-settings
+    environment:
+      <<: *dronn-env
+      NODE_IP: philotes-rest
+    ports:
+      - "8090:8080"
+    volumes:
+      - ./philotes-rest:/home/app/conf
+      - ./root.conf:/home/app/root.conf
+      - ./logs:/var/log/dronn
+
+  crocotta:
+    image: ${CROCOTTA_IMAGE}
+#    network_mode: "host"
+    <<: *default-settings
+    ports:
+      - "8083:8080"
+      - "5062:5062/udp"
+      - "5072:5072/udp"
+      - "5075:5075/udp"
+      - "5076:5076/udp"
+      - "15100-15120:15100-15120/udp"
+      - "29030-29049:29030-29049/udp"
+      - "29060-29079:29060-29079/udp"
+#      - "11400-11420:11400-11420/udp"
+    environment:
+      <<: *dronn-env
+      NODE_IP: crocotta
+      DB_PASS: ${DB_PASS}
+    volumes:
+      - ./crocotta:/home/app/conf
+      - ./root.conf:/home/app/root.conf
+      - ./logs:/var/log/dronn
+
+  dialog-sentione:
+    image: ${DIALOG_SENTIONE_IMAGE}
+    <<: *default-settings
+    environment:
+      <<: *dronn-env
+      NODE_IP: dialog-sentione
+    volumes:
+      - ./dialog/sentione:/home/app/conf
+      - ./root.conf:/home/app/root.conf
+      - ./logs:/var/log/dronn
+
+  vac:
+    image: ${VAC_IMAGE}
+    <<: *default-settings
+    ports:
+      - "5064:5064/udp"
+      - "15200-15209:15200-15209/udp"
+    environment:
+      <<: *dronn-env
+      NODE_IP: vac
+    volumes:
+      - ./vac:/home/app/conf
+      - ./root.conf:/home/app/root.conf
+      - ./logs:/var/log/dronn
+
+  pytia:
+    image: ${PYTIA_IMAGE}
+    <<: *default-settings
+    ports:
+      - "9016:8081"
+      - "6881:6881"
+    environment:
+      <<: *dronn-env
+      NODE_IP: pytia
+    volumes:
+      - ./pytia:/home/app/conf
+      - ./root.conf:/home/app/root.conf
+      - ./logs:/var/log/dronn
